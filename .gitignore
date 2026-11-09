@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Database (demo data — regenerate with POST /api/data/reset)
+backend/vyapaarmitra.db
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Environment / secrets
+.env
+.env.local
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,267 @@
+/* ------------------------------------------------------------------ *
+ * VyapaarMitra AI design system
+ * Warm paper background, deep green brand, amber accents.
+ * Plain CSS on purpose: no build-time CSS framework needed for the MVP.
+ * ------------------------------------------------------------------ */
+
+:root {
+  --paper: #faf6ef;
+  --surface: #ffffff;
+  --ink: #1c1917;
+  --muted: #6b675f;
+  --line: #e7e1d6;
+  --brand: #0e7a5f;
+  --brand-dark: #0a5c48;
+  --brand-soft: #e6f4ef;
+  --accent: #f59e0b;
+  --danger: #dc2626;
+  --danger-soft: #fdecec;
+  --info: #2563eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4 {
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  font-weight: 650;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+/* --- surfaces ----------------------------------------------------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.1rem 1.15rem;
+  box-shadow: 0 1px 2px rgb(28 25 23 / 0.04);
+}
+
+.card-tight {
+  padding: 0.85rem 0.95rem;
+}
+
+.panel-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+/* --- controls ------------------------------------------------------ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  padding: 0.5rem 0.95rem;
+  font-size: 0.9rem;
+  font-weight: 550;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+  background: transparent;
+  color: var(--ink);
+}
+
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--brand);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) { background: var(--brand-dark); }
+
+.btn-ghost {
+  border-color: var(--line);
+  background: var(--surface);
+}
+.btn-ghost:hover:not(:disabled) { background: #f6f2ea; }
+
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: #f6d4d4;
+}
+.btn-danger:hover:not(:disabled) { background: #f9dddd; }
+
+.btn-lg { padding: 0.7rem 1.3rem; font-size: 1rem; border-radius: 12px; }
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.92rem;
+  font-family: inherit;
+  color: var(--ink);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  outline-offset: 1px;
+  border-color: var(--brand);
+}
+
+.textarea { resize: vertical; min-height: 76px; }
+
+.label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.hint { font-size: 0.76rem; color: var(--muted); }
+
+/* --- badges -------------------------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  padding: 0.14rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.badge-ok { background: var(--brand-soft); color: var(--brand-dark); }
+.badge-warn { background: #fef3e2; color: #b45309; }
+.badge-crit { background: var(--danger-soft); color: var(--danger); }
+.badge-info { background: #e8effd; color: #1d4ed8; }
+.badge-mute { background: #f1ede5; color: var(--muted); }
+
+/* --- tables -------------------------------------------------------- */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.table th {
+  text-align: left;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  font-weight: 650;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.table td {
+  padding: 0.6rem 0.6rem;
+  border-bottom: 1px solid #f2eee6;
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr:hover { background: #fdfbf7; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --- misc ---------------------------------------------------------- */
+.muted { color: var(--muted); }
+.divider { border-top: 1px solid var(--line); }
+
+.logo-mark {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 9px;
+  flex: none;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.spinner {
+  display: inline-block;
+  animation: vm-spin 0.8s linear infinite;
+  margin-right: 0.5rem;
+}
+
+@keyframes vm-spin {
+  to { transform: rotate(360deg); }
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(28 25 23 / 0.42);
+}
+
+.notice {
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.85rem;
+  border: 1px solid transparent;
+}
+.notice-ok { background: var(--brand-soft); color: var(--brand-dark); border-color: #cfe9e0; }
+.notice-err { background: var(--danger-soft); color: var(--danger); border-color: #f6d4d4; }
+.notice-info { background: #f1f5fb; color: #334155; border-color: #e2e8f0; }
+
+.empty {
+  text-align: center;
+  padding: 1.8rem 1rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex: none;
+}
+
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
