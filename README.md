@@ -207,6 +207,9 @@ see the seeded shop, and rehearse the demo order below.
 
 ## Suggested live demo order
 
+Step-by-step talking points and reference screenshots for each step:
+**[DEMO_RUNTHROUGH.md](DEMO_RUNTHROUGH.md)** · screenshots in [`docs/demo/`](docs/demo/).
+
 1. Open dashboard and introduce the shop.
 2. Add/show a product and its cost/price (ProfitGuard).
 3. Record a sale → estimated profit updates.
