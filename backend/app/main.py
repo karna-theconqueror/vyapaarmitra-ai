@@ -1,5 +1,6 @@
 """VyapaarMitra AI — FastAPI backend."""
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -40,14 +41,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Dev origins plus any extras from the environment, e.g.
+#   set CORS_ORIGINS=https://vyapaarmitra.vercel.app,https://myapp.vercel.app
+_DEFAULT_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5180",
+    "http://127.0.0.1:5180",
+]
+_extra_origins = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5180",
-        "http://127.0.0.1:5180",
-    ],
+    allow_origins=_DEFAULT_ORIGINS + _extra_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,5 +77,6 @@ for router_module in (
 
 
 @app.get("/api/health")
+@app.get("/health")  # alias for load balancers / uptime probes
 def health():
     return {"status": "ok", "service": "vyapaarmitra-api"}

@@ -21,9 +21,17 @@ from app.models import Customer, FollowUp
 from app.services import profit as profit_service
 from app.services import stock as stock_service
 
-LLM_URL = os.getenv("ADVISOR_LLM_URL", "").strip()
-LLM_KEY = os.getenv("ADVISOR_LLM_KEY", "").strip()
-LLM_MODEL = os.getenv("ADVISOR_LLM_MODEL", "gpt-4o-mini").strip()
+# Optional LLM polish is read from the environment at call time, so the
+# backend can be reconfigured with a restart and never bakes in a key.
+DEFAULT_LLM_MODEL = "gpt-4o-mini"
+
+
+def _llm_config() -> tuple[str, str, str]:
+    return (
+        os.getenv("ADVISOR_LLM_URL", "").strip(),
+        os.getenv("ADVISOR_LLM_KEY", "").strip(),
+        os.getenv("ADVISOR_LLM_MODEL", "").strip() or DEFAULT_LLM_MODEL,
+    )
 
 
 def _due_followups(db: Session, merchant_id: int) -> list[dict]:
@@ -141,10 +149,11 @@ def _rules_brief(signals: list[dict]) -> str:
 
 def _llm_brief(signals: list[dict], shop_name: str) -> str | None:
     """Optional polish. Returns None on any problem so rules-only takes over."""
-    if not LLM_URL or not LLM_KEY:
+    llm_url, llm_key, llm_model = _llm_config()
+    if not llm_url or not llm_key:
         return None
     payload = {
-        "model": LLM_MODEL,
+        "model": llm_model,
         "messages": [
             {
                 "role": "system",
@@ -160,23 +169,53 @@ def _llm_brief(signals: list[dict], shop_name: str) -> str | None:
                 "content": f"Shop: {shop_name}\nSignals:\n{json.dumps(signals, ensure_ascii=False)}",
             },
         ],
-        "max_tokens": 220,
+        # Headroom for thinking models: the visible brief is ~2 sentences, but
+        # reasoning tokens are drawn from this budget too (a 220-token cap got
+        # truncated mid-sentence by gemini-3-flash-preview).
+        "max_tokens": 1000,
         "temperature": 0.2,
     }
+    # Gemini's thinking models burn the token/time budget on reasoning
+    # (measured: ~14s dashboard stall vs 1.4s with reasoning off). Only
+    # Google's endpoint documents this field, so send it just for that host.
+    if "generativelanguage.googleapis.com" in llm_url:
+        payload["reasoning_effort"] = "none"
     request = urllib.request.Request(
-        LLM_URL,
+        llm_url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {LLM_KEY}",
+            "Authorization": f"Bearer {llm_key}",
         },
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=8) as response:
+        # Generous-but-bounded timeout: a slow LLM must never stall the demo,
+        # and any failure at all falls back to the rules-only brief.
+        with urllib.request.urlopen(request, timeout=15) as response:
             body = json.loads(response.read().decode("utf-8"))
-        return body["choices"][0]["message"]["content"].strip()
-    except (urllib.error.URLError, KeyError, IndexError, ValueError, TimeoutError):
+        message = body["choices"][0]["message"]
+        content = message.get("content") if isinstance(message, dict) else None
+        # Some APIs return content as a list of parts instead of a string.
+        if isinstance(content, list):
+            content = "".join(
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict)
+            )
+        text = (content or "").strip()
+        return text or None
+    except (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        KeyError,
+        IndexError,
+        TypeError,
+        AttributeError,
+        ValueError,
+        TimeoutError,
+        OSError,
+    ):
         return None
 
 

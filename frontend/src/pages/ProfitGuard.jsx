@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api.js'
+import { MarginBarChart } from '../components/Charts.jsx'
 import { Empty, Field, Modal, Notice, Spinner, Stat } from '../components/ui.jsx'
 import { MARGIN_STATUS, inr, pct, todayISO } from '../lib/format.js'
 import { useAsync } from '../lib/useAsync.js'
@@ -283,7 +284,14 @@ export default function ProfitGuard() {
               Add your first product with cost and selling price to see estimated margins.
             </Empty>
           ) : (
-            <div style={{ overflowX: 'auto', marginTop: 8 }}>
+            <>
+              <div style={{ marginTop: 10, marginBottom: 6 }}>
+                <MarginBarChart rows={rows} />
+                <p className="hint" style={{ marginTop: 4 }}>
+                  Estimated gross margin % — green healthy, amber weak (&lt;10%), red negative.
+                </p>
+              </div>
+              <div style={{ overflowX: 'auto', marginTop: 8 }}>
               <table className="table">
                 <thead>
                   <tr>
@@ -341,7 +349,8 @@ export default function ProfitGuard() {
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
           <p className="hint" style={{ marginTop: 8 }}>
             {profit.data?.note} Not audited profit, tax compliance or cash-flow forecasting.

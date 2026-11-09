@@ -117,18 +117,26 @@ Rules-only mode is the default, so the demo works offline.
 set ADVISOR_LLM_URL=https://api.openai.com/v1/chat/completions
 set ADVISOR_LLM_KEY=sk-...
 set ADVISOR_LLM_MODEL=gpt-4o-mini
+
+# Google Gemini (verified working with this repo's GEMINI_API_KEY)
+set ADVISOR_LLM_URL=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+set ADVISOR_LLM_KEY=%GEMINI_API_KEY%
+set ADVISOR_LLM_MODEL=gemini-3-flash-preview
 ```
 
 If the call fails or is slow, the response silently falls back to
-`generated_by: "rules"`.
+`generated_by: "rules"`. The dashboard badge shows which mode produced the brief.
 
 ## Voice notes
 
 - Uses the browser Web Speech API (`webkitSpeechRecognition` in Chrome/Edge).
 - Supported intents: **add stock** (“Add 6 packets of tea”), **daily summary**,
-  **low-stock check**, **follow-up list**.
-- The transcript is editable, and stock/financial changes **never save without
-  confirmation**. Typed fallback uses the same parser.
+  **low-stock check**, **follow-up list**, **product lookup** (“Price of tea” —
+  read-only price/cost/stock/margin), **today's sales** (“What did I sell today” —
+  read-only).
+- Read-only intents (lookup, sales, alerts, brief) never write anything; only
+  **add stock** changes data, and it **never saves without confirmation**.
+- The transcript is editable. Typed fallback uses the same parser.
 - Recognition can mishear names and quantities — the confirmation card always shows the
   resolved product and the before/after quantity.
 
@@ -138,8 +146,8 @@ If the call fails or is slow, the response silently falls back to
   ProfitGuard estimate, StockSense alert, follow-up list + completion. ✅
 - **P1** — unified advisor brief from module outputs (with visible basis);
   one safe voice intent with confirmation + typed fallback. ✅
-- **P2** — polished charts, responsive fine-tuning, export/reset, more voice intents.
-  Export/reset done; charts still open.
+- **P2** — polished charts (Recharts: 7-day revenue/profit trend + margin bars),
+  export/reset, six voice intents, deployment config. ✅
 
 ## Toolchain notes (this machine)
 
@@ -156,6 +164,46 @@ just works:
 3. **Plain CSS instead of Tailwind** (`frontend/src/index.css`): the blueprint
    allows "Tailwind CSS or simple CSS", and a CSS framework would add another
    native binding. The design system lives in one readable stylesheet.
+
+## Deployment
+
+Two pieces: a static frontend and a Python API host.
+
+**Frontend (Vercel or any static host)**
+
+```bash
+cd frontend
+npm install
+npm run build          # → dist/
+```
+
+- `frontend/vercel.json` contains the SPA rewrite so deep links
+  (`/dashboard`, `/profit`, …) work on refresh.
+- The app calls `/api` by default (same origin). For a separate API host, set
+  `VITE_API_BASE=https://your-api.example.com` at build time
+  (`$env:VITE_API_BASE=...; npm run build`), and add a proxy/rewrite for
+  `/api/*` on the host if you prefer same-origin instead.
+
+**Backend (any Python host — Render, Railway, Fly.io, a VPS)**
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+# SQLite persists on disk; point DATABASE_PATH or mount a volume as needed
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Environment variables for the API host:
+
+| Variable | Purpose |
+|---|---|
+| `CORS_ORIGINS` | Comma-separated extra origins allowed by CORS (e.g. your Vercel URL) |
+| `ADVISOR_LLM_URL` / `ADVISOR_LLM_KEY` / `ADVISOR_LLM_MODEL` | Optional LLM polish for the daily brief |
+
+`ADVISOR_LLM_KEY` never gets committed — set it in the host's secret store.
+
+Then open the deployed URL, run **Settings → Reset demo data** once so judges
+see the seeded shop, and rehearse the demo order below.
 
 ## Suggested live demo order
 

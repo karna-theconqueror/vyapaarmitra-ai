@@ -1,4 +1,7 @@
-const BASE = '/api'
+// API base: same-origin "/api" in dev (Vite proxy) and local runs.
+// For a hosted frontend pointing at a separate API host, set the
+// VITE_API_BASE build/env variable to the absolute URL (no trailing slash).
+const BASE = import.meta.env.VITE_API_BASE || '/api'
 
 async function request(path, { method = 'GET', body } = {}) {
   const res = await fetch(BASE + path, {

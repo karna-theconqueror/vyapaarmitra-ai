@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { Empty, Field, Notice, SeverityDot, Spinner } from '../components/ui.jsx'
+import { inr, todayISO } from '../lib/format.js'
 import { useAsync } from '../lib/useAsync.js'
 
 /**
@@ -37,6 +38,32 @@ export function parseCommand(raw, products = []) {
   if (/(follow.?ups?|customers?\s*(?:due|today)|due\s*(?:list|customers?))/.test(t)) {
     return { intent: 'followups', label: 'Show due follow-ups', ready: true }
   }
+  // Read-only: today's recorded sales. Checked before the lookup pattern so
+  // "how many did I sell today" is not mistaken for a product query.
+  if (
+    /(?:what\s+did\s+i\s+sell|sell\s+today|sold\s+today|today'?s?\s+sales?|sales?\s+(?:today|so\s+far)|how\s+much\s+(?:did\s+i\s+)?sell)/.test(
+      t,
+    )
+  ) {
+    return { intent: 'sales_today', label: "Show today's recorded sales", ready: true }
+  }
+  // Read-only: price / stock of one product ("price of tea", "how many packets of tea do I have").
+  const lookupMatch = t.match(
+    /^(?:what(?:'s| is| are)?\s+(?:the\s+)?(?:price|cost|stock|quantity|qty)\s+(?:of|for)\s+|(?:price|cost|stock|quantity|qty)\s+(?:of|for)\s+|how\s+(?:much|many)\s+(?:is|are|do\s+i\s+have|of)\s+|how\s+many\s+)(.+?)[.?]*$/,
+  )
+  if (lookupMatch) {
+    const query = lookupMatch[1].trim()
+    const product = resolveProduct(query, products)
+    return {
+      intent: 'product_lookup',
+      query,
+      product,
+      label: product
+        ? `Show price & stock for ${product.name}`
+        : `Look up “${query}” — product not matched`,
+      ready: Boolean(product),
+    }
+  }
   if (/(summaries|summary|brief|report|how\s*(?:am|i|my shop)|today.*sales|business.*today)/.test(t)) {
     return { intent: 'daily_brief', label: 'Show daily advisor brief', ready: true }
   }
@@ -45,12 +72,23 @@ export function parseCommand(raw, products = []) {
 }
 
 function resolveProduct(query, products) {
-  const q = (query || '').trim().toLowerCase()
+  let q = (query || '').trim().toLowerCase()
+  if (!q) return null
+  // Strip filler so "packets of tea do I have" still finds "Tea 500g".
+  q = q
+    .replace(/\b(do i have|have i got|is there|are there|today|now)\b/g, ' ')
+    .replace(
+      /\b(packets?|units?|pcs|pieces?|bottles?|jars?|kilos?|kg|grams?|litres?|liters?|ml|nos?|numbers?)\b/g,
+      ' ',
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
   if (!q) return null
   return (
     products.find((p) => p.name.toLowerCase() === q) ||
     products.find((p) => p.name.toLowerCase().startsWith(q)) ||
     products.find((p) => p.name.toLowerCase().includes(q)) ||
+    products.find((p) => q.includes(p.name.toLowerCase())) ||
     null
   )
 }
@@ -60,6 +98,8 @@ const SAMPLES = [
   'Show my daily summary',
   'What is low in stock?',
   'Show follow-ups due',
+  'Price of tea',
+  'What did I sell today',
 ]
 
 export default function VoiceDukaan() {
@@ -198,6 +238,45 @@ export default function VoiceDukaan() {
             : ['Your due queue is clear.'],
         })
         speakText(list.length ? `${list.length} follow-ups are due` : 'No follow-ups due')
+      } else if (parsed.intent === 'sales_today') {
+        const list = await api.sales(todayISO())
+        const revenue = list.reduce((sum, s) => sum + s.unit_price * s.quantity, 0)
+        setResult({
+          kind: list.length ? 'info' : 'ok',
+          title: list.length
+            ? `${list.length} sale(s) today · ${inr(revenue)} revenue`
+            : 'No sales recorded today',
+          lines: list.length
+            ? list.map(
+                (s) =>
+                  `• ${s.quantity} × ${s.product_name || `#${s.product_id}`} @ ${inr(s.unit_price)} = ${inr(s.unit_price * s.quantity)}`,
+              )
+            : ['Record a sale in ProfitGuard to see it here.'],
+        })
+        speakText(
+          list.length
+            ? `You recorded ${list.length} sales today, total ${inr(revenue)}`
+            : 'No sales recorded today',
+        )
+      } else if (parsed.intent === 'product_lookup') {
+        const p = parsed.product
+        const margin =
+          p.purchase_cost != null && p.selling_price != null && p.selling_price > 0
+            ? Math.round(((p.selling_price - p.purchase_cost) / p.selling_price) * 1000) / 10
+            : null
+        const low = p.quantity <= p.min_threshold
+        setResult({
+          kind: low ? 'warn' : 'ok',
+          title: p.name,
+          lines: [
+            `• Selling price: ${p.selling_price != null ? inr(p.selling_price, { decimals: 2 }) : 'not set'} per ${p.unit}`,
+            `• Purchase cost: ${p.purchase_cost != null ? inr(p.purchase_cost, { decimals: 2 }) : 'not set'}`,
+            `• In stock: ${p.quantity} ${p.unit}(s) · alert level ${p.min_threshold}`,
+            `• Estimated gross margin: ${margin != null ? `${margin}%` : 'not enough data'}`,
+            low ? '⚠ At or below your alert level — consider restocking.' : 'Above your alert level.',
+          ],
+        })
+        speakText(`${p.name}: ${p.quantity} in stock`)
       }
       setParsed(null)
     } catch (err) {
@@ -353,16 +432,32 @@ export default function VoiceDukaan() {
                 </div>
               ) : null}
 
+              {parsed.intent === 'product_lookup' && parsed.product ? (
+                <div className="card card-tight" style={{ marginTop: 10, background: '#fdfbf7' }}>
+                  <div style={{ fontSize: '0.9rem' }}>
+                    <strong>{parsed.product.name}</strong>
+                    <div className="hint" style={{ marginTop: 4 }}>
+                      Read-only lookup — nothing will be changed or saved.
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {parsed.intent === 'unknown' ? (
                 <p className="hint" style={{ marginTop: 8 }}>
-                  Supported: add stock (e.g. “Add 6 packets of tea”), daily summary, low-stock
-                  check, follow-up list.
+                  Supported: add stock (“Add 6 packets of tea”), daily summary, low-stock
+                  check, follow-up list, product lookup (“Price of tea”), today's sales
+                  (“What did I sell today”).
                 </p>
               ) : null}
 
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                 <button className="btn btn-primary" onClick={confirmAction} disabled={!parsed.ready || busy}>
-                  {busy ? 'Working…' : 'Confirm & save'}
+                  {busy
+                    ? 'Working…'
+                    : parsed.intent === 'add_stock'
+                      ? 'Confirm & save'
+                      : 'Show result'}
                 </button>
                 <button
                   className="btn btn-ghost"

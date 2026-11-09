@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
+import { TrendChart } from '../components/Charts.jsx'
 import { Empty, Notice, SeverityDot, Spinner, Stat } from '../components/ui.jsx'
+import { costMap, dailyTrend } from '../lib/analytics.js'
 import { dateLabel, inr, todayISO } from '../lib/format.js'
 import { useAsync } from '../lib/useAsync.js'
 
@@ -46,7 +48,8 @@ function Signal({ signal }) {
 
 export default function Dashboard() {
   const { data, error, loading, reload } = useAsync(() => api.dashboard())
-  const sales = useAsync(() => api.sales(todayISO()))
+  const sales = useAsync(() => api.sales())
+  const profit = useAsync(() => api.profitProducts())
 
   if (loading && !data) return <Spinner label="Loading your daily brief…" />
   if (error && !data) return <Notice kind="err">{error}</Notice>
@@ -54,6 +57,8 @@ export default function Dashboard() {
 
   const { merchant, summary, low_stock, advisor, due_followup_count } = data
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'
+  const trend = dailyTrend(sales.data ?? [], costMap(profit.data?.rows ?? []))
+  const todaySales = (sales.data ?? []).filter((s) => s.sale_date === todayISO())
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -116,16 +121,9 @@ export default function Dashboard() {
         />
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gap: 14,
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-          alignItems: 'start',
-        }}
-      >
+      <div style={{ display: 'grid', gap: 14 }}>
         {/* Advisor brief */}
-        <section className="card" style={{ gridColumn: '1 / -1' }}>
+        <section className="card">
           <div
             style={{
               display: 'flex',
@@ -157,8 +155,25 @@ export default function Dashboard() {
           </p>
         </section>
 
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          {/* Last 7 days — revenue vs estimated profit */}
+          <section className="card" style={{ flex: '2 1 440px', minWidth: 0 }}>
+            <div className="panel-title">Last 7 days — revenue &amp; estimated profit</div>
+            {sales.loading && !sales.data || profit.loading && !profit.data ? (
+              <Spinner label="Loading trend…" />
+            ) : (
+              <div style={{ marginTop: 8 }}>
+                <TrendChart data={trend} />
+                <p className="hint" style={{ marginTop: 6 }}>
+                  Bars = recorded revenue · line = estimated gross profit from your entered
+                  costs. Demo data — estimates only.
+                </p>
+              </div>
+            )}
+          </section>
+
         {/* Low stock */}
-        <section className="card">
+        <section className="card" style={{ flex: '1 1 260px' }}>
           <div
             style={{
               display: 'flex',
@@ -210,8 +225,11 @@ export default function Dashboard() {
           )}
         </section>
 
+        </div>
+
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* Follow-ups */}
-        <section className="card">
+        <section className="card" style={{ flex: '1 1 260px' }}>
           <div
             style={{
               display: 'flex',
@@ -240,7 +258,7 @@ export default function Dashboard() {
         </section>
 
         {/* Today's sales */}
-        <section className="card" style={{ gridColumn: '1 / -1' }}>
+        <section className="card" style={{ flex: '2 1 440px', minWidth: 0 }}>
           <div
             style={{
               display: 'flex',
@@ -258,7 +276,7 @@ export default function Dashboard() {
             <Spinner label="Loading sales…" />
           ) : sales.error ? (
             <Notice kind="err">{sales.error}</Notice>
-          ) : !sales.data || sales.data.length === 0 ? (
+          ) : todaySales.length === 0 ? (
             <Empty title="No sales recorded today">
               Record a sale in ProfitGuard to see revenue and estimated profit here.
             </Empty>
@@ -275,7 +293,7 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sales.data.map((s) => (
+                  {todaySales.map((s) => (
                     <tr key={s.id}>
                       <td>{s.product_name || `#${s.product_id}`}</td>
                       <td className="num">{s.quantity}</td>
@@ -289,6 +307,7 @@ export default function Dashboard() {
             </div>
           )}
         </section>
+        </div>
       </div>
     </div>
   )
