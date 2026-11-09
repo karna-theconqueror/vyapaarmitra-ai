@@ -42,27 +42,30 @@ automatically with products, sales, stock movements, customers and follow-ups.
 ```
 vyapaarmitra-ai/
 ├── backend/
-│   └── app/
-│       ├── main.py            # FastAPI app, CORS, startup seed
-│       ├── database.py        # SQLite engine + session
-│       ├── models.py          # Merchant, Product, Sale, StockMovement, Customer, FollowUp
-│       ├── schemas.py         # Pydantic request/response models (the API contract)
-│       ├── deps.py            # current-merchant / product lookups
-│       ├── seed.py            # seeded demo shop (labelled demo data)
-│       ├── services/
-│       │   ├── profit.py      # ProfitGuard: margin & profit estimates (deterministic)
-│       │   ├── stock.py       # StockSense: threshold alerts + reorder suggestion
-│       │   └── advisor.py     # Unified Advisor: signals + rules-only / optional LLM
-│       └── routers/           # merchant, products, sales, stock, customers, advisor,
-│                              # dashboard, data (export/reset)
-└── frontend/
-    └── src/
-        ├── App.jsx            # routes
-        ├── api.js             # typed-ish fetch client for every endpoint
-        ├── components/        # Shell (layout) + ui kit (cards, badges, modal, …)
-        ├── lib/               # formatting helpers + useAsync hook
-        └── pages/             # Landing, Onboarding, Dashboard, ProfitGuard,
-                               # StockSense, Customers, VoiceDukaan, Settings
+│   ├── app/
+│   │   ├── main.py            # FastAPI app, CORS, startup seed
+│   │   ├── database.py        # SQLite engine + session (DATABASE_PATH override)
+│   │   ├── models.py          # Merchant, Product, Sale, StockMovement, Customer, FollowUp
+│   │   ├── schemas.py         # Pydantic request/response models (the API contract)
+│   │   ├── deps.py            # current-merchant / product lookups
+│   │   ├── seed.py            # seeded demo shop (labelled demo data)
+│   │   ├── services/
+│   │   │   ├── profit.py      # ProfitGuard: margin & profit estimates (deterministic)
+│   │   │   ├── stock.py       # StockSense: threshold alerts + reorder suggestion
+│   │   │   └── advisor.py     # Unified Advisor: signals + rules-only / optional LLM
+│   │   └── routers/           # merchant, products, sales, stock, customers, advisor,
+│   │                          # dashboard, data (export/reset)
+│   └── tests/                 # API contract tests (pytest, hermetic temp DB)
+├── frontend/
+│   └── src/
+│       ├── App.jsx            # routes
+│       ├── api.js             # typed-ish fetch client for every endpoint
+│       ├── components/        # Shell (layout) + ui kit (cards, badges, modal, …)
+│       ├── lib/               # formatting helpers + useAsync hook
+│       └── pages/             # Landing, Onboarding, Dashboard, ProfitGuard,
+│                              # StockSense, Customers, VoiceDukaan, Settings
+├── tests/e2e/                 # browser tests: smoke, mic_path, rehearsal
+└── docs/demo/                 # rehearsal screenshots for DEMO_RUNTHROUGH.md
 ```
 
 ## Modules → screens
@@ -197,6 +200,7 @@ Environment variables for the API host:
 
 | Variable | Purpose |
 |---|---|
+| `DATABASE_PATH` | SQLite file location (defaults to `backend/vyapaarmitra.db`; point it at a mounted volume on a host) |
 | `CORS_ORIGINS` | Comma-separated extra origins allowed by CORS (e.g. your Vercel URL) |
 | `ADVISOR_LLM_URL` / `ADVISOR_LLM_KEY` / `ADVISOR_LLM_MODEL` | Optional LLM polish for the daily brief |
 
@@ -217,6 +221,31 @@ Step-by-step talking points and reference screenshots for each step:
 5. Show a due customer follow-up → edit message → mark complete.
 6. Use one VoiceDukaan command, check the transcript, confirm.
 7. Finish on the Unified AI Business Advisor brief.
+
+## Tests
+
+Three layers, all green at the last full run:
+
+```bash
+# 1) API contract tests — hermetic temp SQLite, no LLM calls (31 tests)
+cd backend
+python -m pip install -r requirements-dev.txt
+python -m pytest
+
+# 2-3) Browser tests — need both servers running (dev :5180, API :8000)
+python tests/e2e/smoke.py       # every page loads, zero console errors, voice intents
+python tests/e2e/mic_path.py    # mic start()/wiring + mocked end-to-end confirm→save
+python tests/e2e/rehearsal.py   # the 7-step demo order, 28 assertions + screenshots
+```
+
+- `tests/e2e/rehearsal.py` requires a **clean seed** (`POST /api/data/reset`)
+  and restores it when finished; it exits non-zero on any failed assertion.
+- Screenshots land in `tests/e2e/_screens/` (gitignored). Override with
+  `VM_BASE` / `VM_API` / `VM_OUT` — e.g. point `VM_BASE=http://localhost:5181`
+  at `npm run preview` to test the **production bundle** (verified: 28/28).
+- `mic_path.py` scenario A hangs in headless Chrome by design (its network
+  speech service never fires events) — only the mocked scenario B gates the
+  exit code. A real human-mic test still needs a real machine.
 
 ## Team split
 

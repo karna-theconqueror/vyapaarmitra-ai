@@ -21,3 +21,7 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Test artifacts
+tests/e2e/_screens/
+.pytest_cache/

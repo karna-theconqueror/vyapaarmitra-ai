@@ -107,13 +107,20 @@ or auto-message anyone."*
 
 ## Automated rehearsal
 
-`vm_rehearsal.py` (in the session temp dir, not part of the repo) drives all
-7 steps in a headless browser, asserts what the judge should see at each step,
-screenshots every step, resets the seed, and exits non-zero on any failure.
-Last run: **28/28 assertions passed, 0 console errors.**
+```bash
+python tests/e2e/rehearsal.py
+```
 
-The mic path is covered separately by `vm_mic.py`: real-API start() verified,
-and a mocked SpeechRecognition flow proven end-to-end (transcript → interpret →
-Confirm & save → real stock update 30 → 36). **A live human-mic test still has
-to happen on a real machine** — headless Chrome's speech service never fires
-events.
+Drives all 7 steps in a headless browser, asserts what the judge should see at
+each step, screenshots every step, resets the seed, and exits non-zero on any
+failure. Last runs: **28/28 assertions passed, 0 console errors** — on both the
+dev server (`:5180`) and the production bundle (`npm run preview`, `:5181`).
+
+The mic path is covered by `python tests/e2e/mic_path.py`: real-API start()
+verified, and a mocked SpeechRecognition flow proven end-to-end (transcript →
+interpret → Confirm & save → real stock update 30 → 36). **A live human-mic
+test still has to happen on a real machine** — headless Chrome's speech service
+never fires events.
+
+`python tests/e2e/smoke.py` additionally checks all 8 pages, the three
+read-only voice intents and a sale recording, with zero console errors.

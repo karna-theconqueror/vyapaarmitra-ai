@@ -26,4 +26,16 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    // `npm run preview` serves the built dist/ with the same /api proxy,
+    // so the production bundle can be smoke-tested before deploying.
+    port: 5181,
+    strictPort: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })
