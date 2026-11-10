@@ -2,9 +2,11 @@
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app import models  # noqa: F401  (registers tables with the metadata)
 from app.database import Base, SessionLocal, engine
@@ -82,3 +84,35 @@ for router_module in (
 @app.get("/health")  # alias for load balancers / uptime probes
 def health():
     return {"status": "ok", "service": "vyapaarmitra-api"}
+
+
+# --- Static frontend (single-service production deploy) ----------------------
+# Render's build command runs `npm run build`, so the built SPA sits in
+# frontend/dist and this API serves it from the same origin: one URL, `/api`
+# needs no CORS and the frontend needs no VITE_API_BASE. In dev the Vite
+# server serves the UI instead and nothing here is hit.
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+
+def _serve_spa(full_path: str):
+    index = FRONTEND_DIST / "index.html"
+    if not index.is_file():
+        raise HTTPException(status_code=404, detail="Frontend not built.")
+    if full_path:
+        # Never serve a file outside dist/ (path traversal).
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        if candidate.is_file() and candidate.is_relative_to(FRONTEND_DIST.resolve()):
+            return FileResponse(candidate)
+        # A dotted path is a missing asset, not a client-side route.
+        if "." in Path(full_path).name:
+            raise HTTPException(status_code=404, detail="Not found.")
+    return FileResponse(index)
+
+
+if (FRONTEND_DIST / "index.html").is_file():
+    # Registered last so /api/*, /docs and /health keep priority.
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found.")
+        return _serve_spa(full_path)

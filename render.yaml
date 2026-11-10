@@ -1,0 +1,30 @@
+# Render Blueprint — VyapaarMitra AI
+#
+# One web service hosts everything: Render's Python runtime preinstalls
+# node/npm (render.com/docs/native-runtimes), so the build command compiles
+# the React SPA too, and FastAPI serves it from frontend/dist. Same origin =
+# no CORS, no VITE_API_BASE.
+#
+# Apply via: Render Dashboard → New → Blueprint → this repo (branch main).
+# You will be prompted for GEMINI_API_KEY (sync: false — never committed).
+services:
+  - type: web
+    name: vyapaarmitra
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: cd frontend && npm ci && npm run build && cd ../backend && pip install -r requirements.txt
+    startCommand: cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # Optional LLM polish for the Unified Advisor daily brief.
+      - key: ADVISOR_LLM_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+      - key: ADVISOR_LLM_MODEL
+        value: gemini-3-flash-preview
+      # One key powers both the advisor polish and voice transcription
+      # (TRANSCRIBE_API_KEY / ADVISOR_LLM_KEY fall back to GEMINI_API_KEY).
+      # Prompted for at Blueprint creation; set it again in the dashboard if
+      # you re-sync an existing Blueprint.
+      - key: GEMINI_API_KEY
+        sync: false

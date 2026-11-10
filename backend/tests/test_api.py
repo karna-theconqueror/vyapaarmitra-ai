@@ -6,13 +6,16 @@ products / 2 alerts / 3 due follow-ups).
 """
 
 from datetime import date, timedelta
+from pathlib import Path
 
+import pytest
 from sqlalchemy import delete
 
 from app.database import SessionLocal
 from app.models import Customer, FollowUp, Merchant, Product, Sale, StockMovement
 
 TODAY = date.today()
+DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
 # --- helpers -----------------------------------------------------------------
@@ -505,6 +508,43 @@ def test_transcribe_maps_service_failure_to_502(client, monkeypatch):
     )
     assert r.status_code == 502
     assert "type the command" in r.json()["detail"].lower()
+
+
+# --- SPA serving (Render single-service deploy) ------------------------------
+@pytest.mark.skipif(
+    not (DIST / "index.html").is_file(),
+    reason="frontend not built (run npm run build)",
+)
+def test_spa_served_from_the_api_origin(client):
+    # root and deep links return the built index.html (SPA fallback)
+    for path in ("/", "/dashboard", "/voice"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert 'id="root"' in r.text
+        assert r.headers["content-type"].startswith("text/html")
+
+    # built assets resolve to real files with real content types
+    index_html = (DIST / "index.html").read_text(encoding="utf-8")
+    import re
+
+    asset = re.search(r'src="(/assets/[^"]+\.js)"', index_html).group(1)
+    r = client.get(asset)
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+
+    # API paths never fall through to the SPA
+    r = client.get("/api/does-not-exist")
+    assert r.status_code == 404
+    assert r.headers["content-type"].startswith("application/json")
+
+    # a missing asset 404s instead of serving HTML
+    r = client.get("/assets/nope-123.js")
+    assert r.status_code == 404
+
+    # path traversal cannot escape dist/
+    r = client.get("/%2e%2e%2f%2e%2e%2fbackend%2frequirements.txt")
+    assert r.status_code == 404
+    assert "fastapi" not in r.text
 
 
 # --- data --------------------------------------------------------------------

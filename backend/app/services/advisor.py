@@ -27,9 +27,14 @@ DEFAULT_LLM_MODEL = "gpt-4o-mini"
 
 
 def _llm_config() -> tuple[str, str, str]:
+    # ADVISOR_LLM_KEY or the shared GEMINI_API_KEY (one secret can serve
+    # both the advisor polish and VoiceDukaan transcription).
+    key = os.getenv("ADVISOR_LLM_KEY", "").strip() or os.getenv(
+        "GEMINI_API_KEY", ""
+    ).strip()
     return (
         os.getenv("ADVISOR_LLM_URL", "").strip(),
-        os.getenv("ADVISOR_LLM_KEY", "").strip(),
+        key,
         os.getenv("ADVISOR_LLM_MODEL", "").strip() or DEFAULT_LLM_MODEL,
     )
 
