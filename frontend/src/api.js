@@ -31,6 +31,23 @@ async function request(path, { method = 'GET', body } = {}) {
   return data
 }
 
+// Multipart upload (recorded audio). The browser must set the
+// multipart boundary itself, so no Content-Type header here.
+async function upload(path, formData) {
+  const res = await fetch(BASE + path, { method: 'POST', body: formData })
+  let data = null
+  try {
+    data = await res.json()
+  } catch {
+    /* non-JSON body */
+  }
+  if (!res.ok) {
+    const detail = data?.detail
+    throw new Error(typeof detail === 'string' ? detail : `Request failed (${res.status})`)
+  }
+  return data
+}
+
 export const api = {
   // merchant / profile
   getMerchant: () => request('/merchant'),
@@ -67,6 +84,13 @@ export const api = {
   // Advisor / dashboard
   dailyBrief: () => request('/advisor/daily-brief'),
   dashboard: () => request('/dashboard'),
+
+  // VoiceDukaan — recorded speech -> transcript (server-side transcription)
+  transcribe: (blob, filename = 'recording.wav') => {
+    const form = new FormData()
+    form.append('file', blob, filename)
+    return upload('/voice/transcribe', form)
+  },
 
   // Settings / data controls
   exportData: () => request('/data/export'),

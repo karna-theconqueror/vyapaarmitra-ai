@@ -10,8 +10,15 @@ import tempfile
 _TMP_DIR = tempfile.mkdtemp(prefix="vyapaarmitra-test-")
 os.environ["DATABASE_PATH"] = os.path.join(_TMP_DIR, "test.db")
 
-# Tests are deterministic: never call a real LLM endpoint.
-for _var in ("ADVISOR_LLM_URL", "ADVISOR_LLM_KEY", "ADVISOR_LLM_MODEL"):
+# Tests are deterministic: never call a real LLM/transcription endpoint.
+for _var in (
+    "ADVISOR_LLM_URL",
+    "ADVISOR_LLM_KEY",
+    "ADVISOR_LLM_MODEL",
+    "TRANSCRIBE_API_KEY",
+    "TRANSCRIBE_MODEL",
+    "GEMINI_API_KEY",
+):
     os.environ.pop(_var, None)
 
 import pytest  # noqa: E402

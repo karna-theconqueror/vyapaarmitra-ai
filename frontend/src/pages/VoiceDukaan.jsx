@@ -102,27 +102,87 @@ const SAMPLES = [
   'What did I sell today',
 ]
 
+// Safety cap so a forgotten recording cannot run forever.
+const MAX_RECORD_MS = 20000
+
+/**
+ * Convert a recorded clip to 16 kHz mono 16-bit PCM WAV — a container every
+ * speech API accepts, regardless of what the browser's MediaRecorder emits
+ * (webm/opus in Chrome, mp4/aac in Safari).
+ */
+async function blobToWav(blob) {
+  const arrayBuffer = await blob.arrayBuffer()
+  const ctx = new (window.AudioContext || window.webkitAudioContext)()
+  try {
+    const decoded = await ctx.decodeAudioData(arrayBuffer)
+    const rate = 16000
+    const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * rate), rate)
+    const source = off.createBufferSource()
+    source.buffer = decoded
+    source.connect(off.destination)
+    source.start()
+    const rendered = await off.startRendering()
+    const samples = rendered.getChannelData(0)
+
+    const buffer = new ArrayBuffer(44 + samples.length * 2)
+    const view = new DataView(buffer)
+    const writeStr = (offset, s) => {
+      for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i))
+    }
+    writeStr(0, 'RIFF')
+    view.setUint32(4, 36 + samples.length * 2, true)
+    writeStr(8, 'WAVE')
+    writeStr(12, 'fmt ')
+    view.setUint32(16, 16, true) // fmt chunk size
+    view.setUint16(20, 1, true) // PCM
+    view.setUint16(22, 1, true) // mono
+    view.setUint32(24, rate, true) // sample rate
+    view.setUint32(28, rate * 2, true) // byte rate
+    view.setUint16(32, 2, true) // block align
+    view.setUint16(34, 16, true) // bits per sample
+    writeStr(36, 'data')
+    view.setUint32(40, samples.length * 2, true)
+    let offset = 44
+    for (let i = 0; i < samples.length; i++, offset += 2) {
+      const s = Math.max(-1, Math.min(1, samples[i]))
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+    }
+    return new Blob([buffer], { type: 'audio/wav' })
+  } finally {
+    ctx.close?.()
+  }
+}
+
 export default function VoiceDukaan() {
   const products = useAsync(() => api.products())
   const alerts = useAsync(() => api.stockAlerts())
 
   const [supported] = useState(
-    () => Boolean(window.SpeechRecognition || window.webkitSpeechRecognition),
+    () => Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder),
   )
-  const [listening, setListening] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [recUrl, setRecUrl] = useState('')
   const [transcript, setTranscript] = useState('')
   const [parsed, setParsed] = useState(null)
   const [result, setResult] = useState(null)
   const [notice, setNotice] = useState(null)
   const [speak, setSpeak] = useState(false)
   const [busy, setBusy] = useState(false)
-  const recognitionRef = useRef(null)
+  const recorderRef = useRef(null)
+  const streamRef = useRef(null)
+  const chunksRef = useRef([])
+  const recUrlRef = useRef('')
+  const noticeTimerRef = useRef(null)
 
   const productList = useMemo(() => products.data ?? [], [products.data])
 
   function flash(kind, text) {
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
     setNotice({ kind, text })
-    if (kind === 'ok') setTimeout(() => setNotice(null), 5000)
+    if (kind === 'ok') {
+      noticeTimerRef.current = setTimeout(() => setNotice(null), 5000)
+    }
   }
 
   function interpret(text) {
@@ -136,52 +196,86 @@ export default function VoiceDukaan() {
     return interpretation
   }
 
-  function startListening() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR) {
-      flash('err', 'Speech recognition is not available in this browser — use the typed input below.')
+  function startRecording() {
+    if (!supported) {
+      flash('err', 'Audio recording is not available in this browser — type your command below instead.')
       return
     }
-    try {
-      const rec = new SR()
-      rec.lang = 'en-IN'
-      rec.interimResults = true
-      rec.continuous = false
-      rec.maxAlternatives = 1
-      rec.onstart = () => {
-        setListening(true)
-        setNotice({ kind: 'info', text: 'Listening… speak one short command.' })
-      }
-      rec.onresult = (event) => {
-        let text = ''
-        for (let i = 0; i < event.results.length; i++) {
-          text += event.results[i][0].transcript
+    setNotice({ kind: 'info', text: 'Recording… speak one short command, then press Stop.' })
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        streamRef.current = stream
+        const mime = ['audio/webm', 'audio/mp4'].find(
+          (m) => window.MediaRecorder.isTypeSupported?.(m),
+        )
+        const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+        chunksRef.current = []
+        rec.ondataavailable = (e) => {
+          if (e.data && e.data.size) chunksRef.current.push(e.data)
         }
-        setTranscript(text.trim())
-        if (event.results[event.results.length - 1].isFinal) {
-          interpret(text.trim())
-        }
-      }
-      rec.onerror = (event) => {
-        setListening(false)
-        const message =
-          event.error === 'not-allowed'
-            ? 'Microphone permission was denied. Type your command instead.'
-            : `Voice input error (${event.error}). You can type the command instead.`
-        flash('err', message)
-      }
-      rec.onend = () => setListening(false)
-      recognitionRef.current = rec
-      rec.start()
-    } catch {
-      setListening(false)
-      flash('err', 'Could not start the microphone. Use the typed input instead.')
-    }
+        rec.onstop = () => handleRecordingStop(rec)
+        recorderRef.current = rec
+        rec.start()
+        setRecording(true)
+        noticeTimerRef.current = setTimeout(() => {
+          if (recorderRef.current && recorderRef.current.state === 'recording') stopRecording()
+        }, MAX_RECORD_MS)
+      })
+      .catch(() => {
+        setRecording(false)
+        flash('err', 'Microphone permission is needed to record — you can type the command instead.')
+      })
   }
 
-  function stopListening() {
-    recognitionRef.current?.stop()
-    setListening(false)
+  function stopRecording() {
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
+    const rec = recorderRef.current
+    if (rec && rec.state !== 'inactive') rec.stop()
+    else setRecording(false)
+  }
+
+  async function handleRecordingStop(rec) {
+    setRecording(false)
+    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
+    const raw = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' })
+    chunksRef.current = []
+    if (!raw.size) {
+      flash('err', 'No audio was captured — please try again.')
+      return
+    }
+
+    // Upload WAV (universally accepted); fall back to the raw clip.
+    let uploadBlob = raw
+    let filename = 'recording.wav'
+    try {
+      uploadBlob = await blobToWav(raw)
+    } catch {
+      const ext = (rec.mimeType || 'audio/webm').split('/')[1]?.split(';')[0] || 'webm'
+      filename = `recording.${ext.replace(/[^a-z0-9]/gi, '')}`
+    }
+    if (recUrlRef.current) URL.revokeObjectURL(recUrlRef.current)
+    recUrlRef.current = URL.createObjectURL(uploadBlob)
+    setRecUrl(recUrlRef.current)
+
+    setTranscribing(true)
+    setNotice({ kind: 'info', text: 'Transcribing your recording…' })
+    try {
+      const { text } = await api.transcribe(uploadBlob, filename)
+      const clean = (text || '').trim()
+      if (!clean) {
+        flash('err', 'No speech was detected in the recording — please try again or type below.')
+        return
+      }
+      setTranscript(clean)
+      flash('ok', `Transcribed: “${clean}”`)
+      interpret(clean)
+    } catch (err) {
+      flash('err', err.message)
+    } finally {
+      setTranscribing(false)
+    }
   }
 
   function speakText(text) {
@@ -301,12 +395,13 @@ export default function VoiceDukaan() {
           <div className="panel-title">Module</div>
           <h1 style={{ fontSize: '1.5rem', marginTop: 4 }}>VoiceDukaan</h1>
           <p className="muted" style={{ fontSize: '0.9rem', marginTop: 4, maxWidth: 660 }}>
-            A simpler way to use the dashboard: speak a short command, check the transcript,
-            correct it if needed — nothing is saved until you confirm.
+            A simpler way to use the dashboard: press Speak and say a short command — the
+            audio is recorded and transcribed for you. Check the transcript, correct it if
+            needed — nothing is saved until you confirm.
           </p>
         </div>
         <span className={`badge ${supported ? 'badge-ok' : 'badge-mute'}`}>
-          {supported ? 'browser speech available' : 'typed input only'}
+          {supported ? 'record + transcribe ready' : 'typed input only'}
         </span>
       </div>
 
@@ -321,9 +416,9 @@ export default function VoiceDukaan() {
           <div style={{ display: 'grid', placeItems: 'center', padding: '1.4rem 0 0.6rem' }}>
             <button
               className="btn"
-              onClick={listening ? stopListening : startListening}
-              disabled={!supported || busy}
-              aria-label={listening ? 'Stop listening' : 'Start listening'}
+              onClick={recording || transcribing ? stopRecording : startRecording}
+              disabled={!supported || busy || transcribing}
+              aria-label={recording ? 'Stop recording' : 'Start recording'}
               style={{
                 width: 108,
                 height: 108,
@@ -332,20 +427,29 @@ export default function VoiceDukaan() {
                 gap: 4,
                 fontSize: '0.82rem',
                 fontWeight: 700,
-                background: listening ? 'var(--danger)' : 'var(--brand)',
+                background: recording ? 'var(--danger)' : 'var(--brand)',
                 color: '#fff',
-                opacity: !supported ? 0.5 : 1,
+                opacity: !supported || transcribing ? 0.5 : 1,
               }}
             >
-              <span style={{ fontSize: '1.6rem', lineHeight: 1 }}>{listening ? '■' : '🎤'}</span>
-              {listening ? 'Stop' : 'Speak'}
+              <span style={{ fontSize: '1.6rem', lineHeight: 1 }}>
+                {transcribing ? '…' : recording ? '■' : '🎤'}
+              </span>
+              {transcribing ? 'Working' : recording ? 'Stop' : 'Speak'}
             </button>
             <p className="hint" style={{ marginTop: 10, textAlign: 'center' }}>
               {supported
-                ? 'One short command, then review the transcript below.'
-                : 'This browser has no speech recognition — type your command below instead.'}
+                ? 'Press Speak, say one short command, then Stop — the audio is transcribed for you.'
+                : 'This browser cannot record audio — type your command below instead.'}
             </p>
           </div>
+
+          {recUrl ? (
+            <div style={{ marginBottom: 10 }}>
+              <div className="label">Your recording</div>
+              <audio controls src={recUrl} style={{ width: '100%', marginTop: 4 }} />
+            </div>
+          ) : null}
 
           <Field label="Transcript (editable before saving)">
             <textarea
@@ -371,6 +475,9 @@ export default function VoiceDukaan() {
                 setParsed(null)
                 setResult(null)
                 setNotice(null)
+                if (recUrlRef.current) URL.revokeObjectURL(recUrlRef.current)
+                recUrlRef.current = ''
+                setRecUrl('')
               }}
             >
               Clear

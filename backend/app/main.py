@@ -17,6 +17,7 @@ from app.routers import (
     products,
     sales,
     stock,
+    voice,
 )
 from app.seed import seed_if_empty
 
@@ -72,6 +73,7 @@ for router_module in (
     advisor,
     dashboard,
     data,
+    voice,
 ):
     app.include_router(router_module.router)
 

@@ -52,9 +52,10 @@ vyapaarmitra-ai/
 │   │   ├── services/
 │   │   │   ├── profit.py      # ProfitGuard: margin & profit estimates (deterministic)
 │   │   │   ├── stock.py       # StockSense: threshold alerts + reorder suggestion
-│   │   │   └── advisor.py     # Unified Advisor: signals + rules-only / optional LLM
+│   │   │   ├── advisor.py     # Unified Advisor: signals + rules-only / optional LLM
+│   │   │   └── transcribe.py  # VoiceDukaan: recorded audio → Gemini transcription
 │   │   └── routers/           # merchant, products, sales, stock, customers, advisor,
-│   │                          # dashboard, data (export/reset)
+│   │                          # dashboard, voice, data (export/reset)
 │   └── tests/                 # API contract tests (pytest, hermetic temp DB)
 ├── frontend/
 │   └── src/
@@ -75,7 +76,7 @@ vyapaarmitra-ai/
 | ProfitGuard | `/profit` | `(selling price − purchase cost) × quantity sold`, margin %, weak/negative list, missing-data flags |
 | StockSense | `/stock` | flags quantity **at or below** your alert level, `suggested reorder = target − current`, movement log with reasons |
 | Customer Comeback | `/customers` | due/overdue queue, editable message templates, mark complete with outcome note |
-| VoiceDukaan | `/voice` | Web Speech API → editable transcript → **confirm before save**, typed fallback |
+| VoiceDukaan | `/voice` | records speech (MediaRecorder) → server transcription → editable transcript → **confirm before save**, typed fallback |
 | Unified AI Business Advisor | `/dashboard` | combines module signals into one short daily brief with visible *basis* lines |
 
 ## API contract (frozen for the team)
@@ -105,6 +106,7 @@ Base URL: `http://localhost:8000` · JSON only · errors: `{"detail": "<message>
 | POST | `/api/followups/{id}/complete` | complete with outcome note |
 | GET | `/api/advisor/daily-brief` | Unified Advisor brief (`generated_by: rules\|llm`) |
 | GET | `/api/dashboard` | one-shot snapshot for the main dashboard |
+| POST | `/api/voice/transcribe` | multipart `file` (audio) → `{"text": "…"}` server-side transcription |
 | GET | `/api/data/export` | full JSON export (privacy control) |
 | POST | `/api/data/reset` | wipe and reseed the demo shop |
 | GET | `/api/health` | liveness |
@@ -132,7 +134,11 @@ If the call fails or is slow, the response silently falls back to
 
 ## Voice notes
 
-- Uses the browser Web Speech API (`webkitSpeechRecognition` in Chrome/Edge).
+- **Records real audio**: the Speak button captures speech with
+  `getUserMedia` + `MediaRecorder`, converts it to WAV in the browser and
+  uploads it to `POST /api/voice/transcribe`, where Gemini returns the
+  transcript (≈5–10 s). The clip is playable back in the UI before you
+  accept the transcript.
 - Supported intents: **add stock** (“Add 6 packets of tea”), **daily summary**,
   **low-stock check**, **follow-up list**, **product lookup** (“Price of tea” —
   read-only price/cost/stock/margin), **today's sales** (“What did I sell today” —
@@ -140,8 +146,10 @@ If the call fails or is slow, the response silently falls back to
 - Read-only intents (lookup, sales, alerts, brief) never write anything; only
   **add stock** changes data, and it **never saves without confirmation**.
 - The transcript is editable. Typed fallback uses the same parser.
-- Recognition can mishear names and quantities — the confirmation card always shows the
+- Speech can mishear names and quantities — the confirmation card always shows the
   resolved product and the before/after quantity.
+- Transcription needs `TRANSCRIBE_API_KEY` (or `GEMINI_API_KEY`) on the server;
+  without it the endpoint explains itself and the typed fallback still works.
 
 ## MVP priorities (from the blueprint)
 
@@ -203,6 +211,7 @@ Environment variables for the API host:
 | `DATABASE_PATH` | SQLite file location (defaults to `backend/vyapaarmitra.db`; point it at a mounted volume on a host) |
 | `CORS_ORIGINS` | Comma-separated extra origins allowed by CORS (e.g. your Vercel URL) |
 | `ADVISOR_LLM_URL` / `ADVISOR_LLM_KEY` / `ADVISOR_LLM_MODEL` | Optional LLM polish for the daily brief |
+| `TRANSCRIBE_API_KEY` / `TRANSCRIBE_MODEL` | Voice transcription key (falls back to `GEMINI_API_KEY`) and model (default `gemini-3.5-transcribe`) |
 
 `ADVISOR_LLM_KEY` never gets committed — set it in the host's secret store.
 
@@ -227,14 +236,14 @@ Step-by-step talking points and reference screenshots for each step:
 Three layers, all green at the last full run:
 
 ```bash
-# 1) API contract tests — hermetic temp SQLite, no LLM calls (31 tests)
+# 1) API contract tests — hermetic temp SQLite, no LLM calls (37 tests)
 cd backend
 python -m pip install -r requirements-dev.txt
 python -m pytest
 
 # 2-3) Browser tests — need both servers running (dev :5180, API :8000)
 python tests/e2e/smoke.py       # every page loads, zero console errors, voice intents
-python tests/e2e/mic_path.py    # mic start()/wiring + mocked end-to-end confirm→save
+python tests/e2e/mic_path.py    # record → transcribe → confirm → real save (fake mic)
 python tests/e2e/rehearsal.py   # the 7-step demo order, 28 assertions + screenshots
 ```
 
@@ -243,9 +252,12 @@ python tests/e2e/rehearsal.py   # the 7-step demo order, 28 assertions + screens
 - Screenshots land in `tests/e2e/_screens/` (gitignored). Override with
   `VM_BASE` / `VM_API` / `VM_OUT` — e.g. point `VM_BASE=http://localhost:5181`
   at `npm run preview` to test the **production bundle** (verified: 28/28).
-- `mic_path.py` scenario A hangs in headless Chrome by design (its network
-  speech service never fires events) — only the mocked scenario B gates the
-  exit code. A real human-mic test still needs a real machine.
+- `mic_path.py` scenario A drives a **real MediaRecorder capture** (Chromium
+  fake-microphone flags) through upload → transcript → confirm → a real stock
+  update verified via the API; only the transcription response is
+  route-intercepted for determinism. Scenario B posts a genuine spoken WAV to
+  the real endpoint (informational — third-party quota must not fail the suite).
+  A live human-mic test still needs a real machine.
 
 ## Team split
 

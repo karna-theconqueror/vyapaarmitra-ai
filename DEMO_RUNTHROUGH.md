@@ -81,10 +81,12 @@ or auto-message anyone."*
 **Screenshot:** `docs/demo/rehearsal-06a-voice-confirm.png`,
 `docs/demo/rehearsal-06b-voice-saved.png`
 
-- Click **Speak**, say *"Add 6 packets of tea"* (or type it in the
-  **Typed fallback** box — same parser, same confirmation).
-- Show the editable transcript → **Interpret command** → interpretation card
-  (`add_stock`, product, qty).
+- Click **Speak**, say *"Add 6 packets of tea"* — the mic records your voice
+  (watch the red recording state, then **Stop**), the clip plays back, and the
+  server transcribes it in a few seconds (or type it in the **Typed fallback**
+  box — same parser, same confirmation).
+- Show the editable transcript → interpretation card
+  (`add stock`, product, qty).
 - **Nothing is saved until you press Confirm & save.** Press it →
   *"Tea 500g updated to 36 packet(s)."*
 - Other demoable intents: *"What is low in stock?"*, *"Show follow-ups due"*,
@@ -116,11 +118,13 @@ each step, screenshots every step, resets the seed, and exits non-zero on any
 failure. Last runs: **28/28 assertions passed, 0 console errors** — on both the
 dev server (`:5180`) and the production bundle (`npm run preview`, `:5181`).
 
-The mic path is covered by `python tests/e2e/mic_path.py`: real-API start()
-verified, and a mocked SpeechRecognition flow proven end-to-end (transcript →
-interpret → Confirm & save → real stock update 30 → 36). **A live human-mic
-test still has to happen on a real machine** — headless Chrome's speech service
-never fires events.
+The mic path is covered by `python tests/e2e/mic_path.py`: a **real
+MediaRecorder capture** (Chromium fake-microphone flags) runs the full flow —
+record → WAV upload → transcript → interpret → Confirm & save → real stock
+update 30 → 36 (only the transcription response is route-intercepted so the
+suite never depends on third-party quota). Scenario B posts a genuine spoken
+WAV to the real Gemini-backed endpoint as an informational check. **A live
+human-mic test still has to happen on a real machine.**
 
 `python tests/e2e/smoke.py` additionally checks all 8 pages, the three
 read-only voice intents and a sale recording, with zero console errors.

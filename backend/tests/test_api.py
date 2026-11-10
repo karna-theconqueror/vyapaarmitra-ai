@@ -427,6 +427,86 @@ def test_dashboard_is_one_shot_snapshot(client):
     assert body["advisor"]["signals"]
 
 
+# --- voice transcription -----------------------------------------------------
+def test_transcribe_requires_a_file(client):
+    r = client.post("/api/voice/transcribe", json={})
+    assert r.status_code == 422
+
+
+def test_transcribe_rejects_non_audio(client):
+    r = client.post(
+        "/api/voice/transcribe",
+        files={"file": ("note.txt", b"hello", "text/plain")},
+    )
+    assert r.status_code == 422
+    assert "audio" in r.json()["detail"].lower()
+
+
+def test_transcribe_rejects_empty_and_oversized_audio(client):
+    r = client.post(
+        "/api/voice/transcribe",
+        files={"file": ("rec.wav", b"", "audio/wav")},
+    )
+    assert r.status_code == 422
+
+    r = client.post(
+        "/api/voice/transcribe",
+        files={"file": ("big.wav", b"x" * (5 * 1024 * 1024 + 1), "audio/wav")},
+    )
+    assert r.status_code == 413
+
+
+def test_transcribe_reports_missing_key_without_network(client):
+    # conftest clears every key env var → the service must fail fast with a
+    # clear, merchant-friendly message instead of calling out.
+    r = client.post(
+        "/api/voice/transcribe",
+        files={"file": ("rec.wav", b"RIFFxxxxWAVE", "audio/wav")},
+    )
+    assert r.status_code == 502
+    detail = r.json()["detail"].lower()
+    assert "not configured" in detail
+    assert "type the command" in detail
+
+
+def test_transcribe_returns_text_from_service(client, monkeypatch):
+    from app.services import transcribe as transcribe_service
+
+    seen = {}
+
+    def fake_transcribe(audio, mime_type):
+        seen["audio"] = audio
+        seen["mime"] = mime_type
+        return "Add 6 packets of tea."
+
+    monkeypatch.setattr(transcribe_service, "transcribe_audio", fake_transcribe)
+    r = client.post(
+        "/api/voice/transcribe",
+        files={"file": ("recording.wav", b"RIFF-fake-audio-bytes", "audio/wav")},
+    )
+    assert r.status_code == 200
+    assert r.json() == {"text": "Add 6 packets of tea."}
+    assert seen["audio"] == b"RIFF-fake-audio-bytes"
+    assert seen["mime"] == "audio/wav"
+
+
+def test_transcribe_maps_service_failure_to_502(client, monkeypatch):
+    from app.services import transcribe as transcribe_service
+
+    def boom(audio, mime_type):
+        raise transcribe_service.TranscribeError(
+            "Could not transcribe the recording (quota). Type the command instead."
+        )
+
+    monkeypatch.setattr(transcribe_service, "transcribe_audio", boom)
+    r = client.post(
+        "/api/voice/transcribe",
+        files={"file": ("rec.wav", b"RIFF", "audio/wav")},
+    )
+    assert r.status_code == 502
+    assert "type the command" in r.json()["detail"].lower()
+
+
 # --- data --------------------------------------------------------------------
 def test_export_contains_every_collection(client):
     body = client.get("/api/data/export").json()
