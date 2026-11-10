@@ -178,9 +178,42 @@ just works:
 
 ## Deployment
 
-Two pieces: a static frontend and a Python API host.
+Two pieces: a static frontend and a Python API host. The repo ships a
+**Render Blueprint** (`render.yaml`) that deploys everything as **one web
+service** (same origin — no CORS, no `VITE_API_BASE`).
 
-**Frontend (Vercel or any static host)**
+**Render (recommended — Blueprint, one service)**
+
+1. Sign in at https://dashboard.render.com and choose **New → Blueprint**.
+2. Connect the repo: **https://github.com/karna-theconqueror/vyapaarmitra-ai**
+   (branch `master`). Render reads `render.yaml` automatically.
+3. When prompted, paste your **`GEMINI_API_KEY`** (powers the Unified Advisor
+   polish and VoiceDukaan transcription). This is a secret — it is never in
+   the repo. `ADVISOR_LLM_URL` / `ADVISOR_LLM_MODEL` are pre-filled.
+4. Approve the Blueprint → Render builds and deploys. First build takes a few
+   minutes (installs Python deps + runs `npm ci && npm run build`).
+
+The service starts with:
+
+```bash
+# build  (Python runtime preinstalls node/npm — render.com/docs/native-runtimes)
+cd frontend && npm ci && npm run build && cd ../backend && pip install -r requirements.txt
+# start
+cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+- Health check: `/health` (also `/api/health`).
+- FastAPI serves the built SPA from `frontend/dist` on the same origin and
+  falls back to `index.html` for deep links (`/dashboard`, `/profit`, …).
+- **Free plan caveats:** the service spins down after ~15 min idle (first
+  request after sleep takes ~30–60 s) and the filesystem is **ephemeral** —
+  SQLite resets on restart/redeploy. On every boot the app reseeds the demo
+  shop *Sri Balaji Kirana*, so the demo is always in a clean state (entered
+  data does not persist across restarts on the free plan).
+- If you need to set the key later: service → **Environment** → add/update
+  `GEMINI_API_KEY` → save (triggers a redeploy).
+
+**Frontend only (Vercel or any static host)**
 
 ```bash
 cd frontend
@@ -188,20 +221,16 @@ npm install
 npm run build          # → dist/
 ```
 
-- `frontend/vercel.json` contains the SPA rewrite so deep links
-  (`/dashboard`, `/profit`, …) work on refresh.
-- The app calls `/api` by default (same origin). For a separate API host, set
-  `VITE_API_BASE=https://your-api.example.com` at build time
-  (`$env:VITE_API_BASE=...; npm run build`), and add a proxy/rewrite for
-  `/api/*` on the host if you prefer same-origin instead.
+- `frontend/vercel.json` contains the SPA rewrite so deep links work on refresh.
+- Set `VITE_API_BASE=https://your-api.example.com` at build time when the API
+  is on a different origin.
 
-**Backend (any Python host — Render, Railway, Fly.io, a VPS)**
+**Backend only (any Python host)**
 
 ```bash
 cd backend
 python -m pip install -r requirements.txt
-# SQLite persists on disk; point DATABASE_PATH or mount a volume as needed
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
 Environment variables for the API host:
@@ -210,10 +239,11 @@ Environment variables for the API host:
 |---|---|
 | `DATABASE_PATH` | SQLite file location (defaults to `backend/vyapaarmitra.db`; point it at a mounted volume on a host) |
 | `CORS_ORIGINS` | Comma-separated extra origins allowed by CORS (e.g. your Vercel URL) |
-| `ADVISOR_LLM_URL` / `ADVISOR_LLM_KEY` / `ADVISOR_LLM_MODEL` | Optional LLM polish for the daily brief |
+| `ADVISOR_LLM_URL` / `ADVISOR_LLM_KEY` / `ADVISOR_LLM_MODEL` | Optional LLM polish for the daily brief (`ADVISOR_LLM_KEY` falls back to `GEMINI_API_KEY`) |
 | `TRANSCRIBE_API_KEY` / `TRANSCRIBE_MODEL` | Voice transcription key (falls back to `GEMINI_API_KEY`) and model (default `gemini-3.5-transcribe`) |
 
-`ADVISOR_LLM_KEY` never gets committed — set it in the host's secret store.
+`GEMINI_API_KEY` / `ADVISOR_LLM_KEY` never get committed — set them in the
+host's secret store.
 
 Then open the deployed URL, run **Settings → Reset demo data** once so judges
 see the seeded shop, and rehearse the demo order below.

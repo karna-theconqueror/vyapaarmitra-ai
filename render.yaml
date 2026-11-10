@@ -5,14 +5,14 @@
 # the React SPA too, and FastAPI serves it from frontend/dist. Same origin =
 # no CORS, no VITE_API_BASE.
 #
-# Apply via: Render Dashboard → New → Blueprint → this repo (branch main).
+# Apply via: Render Dashboard → New → Blueprint → this repo (branch master).
 # You will be prompted for GEMINI_API_KEY (sync: false — never committed).
 services:
   - type: web
     name: vyapaarmitra
     runtime: python
     plan: free
-    branch: main
+    branch: master
     buildCommand: cd frontend && npm ci && npm run build && cd ../backend && pip install -r requirements.txt
     startCommand: cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
