@@ -28,8 +28,11 @@ FALLBACK_MODELS = ("gemini-3.8-flash",)
 GOOGLE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 
 PROMPT = (
-    "Transcribe this speech exactly as spoken, preserving numbers and product "
-    "names. Output only the transcription."
+    "Transcribe this speech from a small shop owner giving a short command. "
+    "It may be in Indian English and mention quantities, units (packets, bottles, kg, pieces) "
+    "and product names (tea, milk, sugar, oil, biscuits, etc.). "
+    "Prefer digits for quantities (e.g. '6' not 'six'). "
+    "Output only the transcription, no quotes or explanation."
 )
 
 

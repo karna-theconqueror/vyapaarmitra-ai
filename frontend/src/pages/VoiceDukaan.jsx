@@ -8,27 +8,46 @@ import { useAsync } from '../lib/useAsync.js'
  * Intent parsing for the small supported command set.
  * Anything unmatched is reported honestly instead of being guessed at.
  */
+const NUMBER_WORDS = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
+  eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13,
+  fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
+  nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60,
+  seventy: 70, eighty: 80, ninety: 90, hundred: 100,
+}
+
+function parseQty(token) {
+  if (!token) return NaN
+  const n = Number(token)
+  if (Number.isFinite(n)) return n
+  const w = String(token).toLowerCase().trim()
+  if (w in NUMBER_WORDS) return NUMBER_WORDS[w]
+  return NaN
+}
+
 export function parseCommand(raw, products = []) {
   const text = (raw || '').trim()
   const t = text.toLowerCase()
   if (!t) return null
 
   const addMatch = t.match(
-    /(?:add|got|received|restock|deliver(?:y)?|stock\s+(?:in|up))\s+(\d+)\s*(?:no\.?|units?|packets?|pcs?|pieces?|bottles?|jars?|kg|kilos?|grams?|litres?|liters?|ml)?\s*(?:of|for)?\s*([a-z0-9 ()&-]+?)[.!?]*$/,
+    /(?:add|got|received|restock|deliver(?:y)?|stock\s+(?:in|up))\s+(\d+|[a-z]+)\s*(?:no\.?|units?|packets?|pcs?|pieces?|bottles?|jars?|kg|kilos?|grams?|litres?|liters?|ml)?\s*(?:of|for)?\s*([a-z0-9 ()&-]+?)[.!?]*$/,
   )
   if (addMatch) {
-    const qty = Number(addMatch[1])
+    const qty = parseQty(addMatch[1])
     const query = addMatch[2].trim()
     const product = resolveProduct(query, products)
-    return {
-      intent: 'add_stock',
-      qty,
-      query,
-      product,
-      label: product
-        ? `Add ${qty} ${product.unit}(s) to ${product.name}`
-        : `Add ${qty} of “${query}” — product not matched`,
-      ready: Boolean(product) && qty > 0,
+    if (Number.isFinite(qty) && qty > 0) {
+      return {
+        intent: 'add_stock',
+        qty,
+        query,
+        product,
+        label: product
+          ? `Add ${qty} ${product.unit}(s) to ${product.name}`
+          : `Add ${qty} of “${query}” — product not matched`,
+        ready: Boolean(product),
+      }
     }
   }
 
@@ -169,11 +188,14 @@ export default function VoiceDukaan() {
   const [notice, setNotice] = useState(null)
   const [speak, setSpeak] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
   const recorderRef = useRef(null)
   const streamRef = useRef(null)
   const chunksRef = useRef([])
   const recUrlRef = useRef('')
   const noticeTimerRef = useRef(null)
+  const startedAtRef = useRef(0)
+  const tickRef = useRef(null)
 
   const productList = useMemo(() => products.data ?? [], [products.data])
 
@@ -201,9 +223,14 @@ export default function VoiceDukaan() {
       flash('err', 'Audio recording is not available in this browser — type your command below instead.')
       return
     }
-    setNotice({ kind: 'info', text: 'Recording… speak one short command, then press Stop.' })
+    // starting fresh recording clears stale transcript/result confusion
+    setParsed(null)
+    setResult(null)
+    setNotice({ kind: 'info', text: 'Recording… speak clearly, then press Stop.' })
     navigator.mediaDevices
-      .getUserMedia({ audio: true })
+      .getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      })
       .then((stream) => {
         streamRef.current = stream
         const mime = ['audio/webm', 'audio/mp4'].find(
@@ -217,6 +244,13 @@ export default function VoiceDukaan() {
         rec.onstop = () => handleRecordingStop(rec)
         recorderRef.current = rec
         rec.start()
+        startedAtRef.current = Date.now()
+        setElapsed(0)
+        if (tickRef.current) clearInterval(tickRef.current)
+        tickRef.current = setInterval(
+          () => setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000)),
+          250,
+        )
         setRecording(true)
         noticeTimerRef.current = setTimeout(() => {
           if (recorderRef.current && recorderRef.current.state === 'recording') stopRecording()
@@ -230,6 +264,10 @@ export default function VoiceDukaan() {
 
   function stopRecording() {
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
+    if (tickRef.current) {
+      clearInterval(tickRef.current)
+      tickRef.current = null
+    }
     const rec = recorderRef.current
     if (rec && rec.state !== 'inactive') rec.stop()
     else setRecording(false)
@@ -260,7 +298,7 @@ export default function VoiceDukaan() {
     setRecUrl(recUrlRef.current)
 
     setTranscribing(true)
-    setNotice({ kind: 'info', text: 'Transcribing your recording…' })
+    setNotice({ kind: 'info', text: 'Transcribing your recording… this can take a few seconds.' })
     try {
       const { text } = await api.transcribe(uploadBlob, filename)
       const clean = (text || '').trim()
@@ -269,7 +307,7 @@ export default function VoiceDukaan() {
         return
       }
       setTranscript(clean)
-      flash('ok', `Transcribed: “${clean}”`)
+      flash('ok', `Transcribed: “${clean}”. Review and confirm below.`)
       interpret(clean)
     } catch (err) {
       flash('err', err.message)
@@ -430,6 +468,7 @@ export default function VoiceDukaan() {
                 background: recording ? 'var(--danger)' : 'var(--brand)',
                 color: '#fff',
                 opacity: !supported || transcribing ? 0.5 : 1,
+                boxShadow: recording ? '0 0 0 6px rgba(220, 53, 69, 0.18)' : undefined,
               }}
             >
               <span style={{ fontSize: '1.6rem', lineHeight: 1 }}>
@@ -438,9 +477,18 @@ export default function VoiceDukaan() {
               {transcribing ? 'Working' : recording ? 'Stop' : 'Speak'}
             </button>
             <p className="hint" style={{ marginTop: 10, textAlign: 'center' }}>
-              {supported
-                ? 'Press Speak, say one short command, then Stop — the audio is transcribed for you.'
-                : 'This browser cannot record audio — type your command below instead.'}
+              {recording ? (
+                <>
+                  <span style={{ color: 'var(--danger)', fontWeight: 700 }}>● Recording</span>{' '}
+                  {elapsed}s — say one short command, then press Stop.
+                </>
+              ) : transcribing ? (
+                'Converting and transcribing your recording…'
+              ) : supported ? (
+                'Press Speak, say one short command, then Stop — the audio is transcribed for you.'
+              ) : (
+                'This browser cannot record audio — type your command below instead.'
+              )}
             </p>
           </div>
 
