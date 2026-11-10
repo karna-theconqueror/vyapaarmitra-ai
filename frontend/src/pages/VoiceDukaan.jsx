@@ -226,7 +226,7 @@ export default function VoiceDukaan() {
     // starting fresh recording clears stale transcript/result confusion
     setParsed(null)
     setResult(null)
-    setNotice({ kind: 'info', text: 'Recording… speak clearly, then press Stop.' })
+    setNotice({ kind: 'info', text: 'Recording… speak anything, then press Stop to transcribe.' })
     navigator.mediaDevices
       .getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -433,9 +433,9 @@ export default function VoiceDukaan() {
           <div className="panel-title">Module</div>
           <h1 style={{ fontSize: '1.5rem', marginTop: 4 }}>VoiceDukaan</h1>
           <p className="muted" style={{ fontSize: '0.9rem', marginTop: 4, maxWidth: 660 }}>
-            A simpler way to use the dashboard: press Speak and say a short command — the
-            audio is recorded and transcribed for you. Check the transcript, correct it if
-            needed — nothing is saved until you confirm.
+            Press Speak and say anything — your speech is recorded and transcribed as spoken.
+            You can edit the transcript, and if it matches a supported action you can confirm
+            it; nothing is ever saved until you confirm.
           </p>
         </div>
         <span className={`badge ${supported ? 'badge-ok' : 'badge-mute'}`}>
@@ -480,12 +480,12 @@ export default function VoiceDukaan() {
               {recording ? (
                 <>
                   <span style={{ color: 'var(--danger)', fontWeight: 700 }}>● Recording</span>{' '}
-                  {elapsed}s — say one short command, then press Stop.
+                  {elapsed}s — speak now, then press Stop to transcribe.
                 </>
               ) : transcribing ? (
-                'Converting and transcribing your recording…'
+                'Converting and transcribing everything you said…'
               ) : supported ? (
-                'Press Speak, say one short command, then Stop — the audio is transcribed for you.'
+                'Press Speak, say anything, then Stop — the audio is transcribed for you.'
               ) : (
                 'This browser cannot record audio — type your command below instead.'
               )}
